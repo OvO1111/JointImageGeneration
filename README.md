@@ -1,4 +1,4 @@
-# JointImageGeneration
+# Joint CT & Anatomical Mask Generation
 official implementation of GuideGen in `GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation`, submitted to MICCAI 2024.
 
 ## Code
