@@ -1,6 +1,5 @@
 # JointImageGeneration
 official implementation of GuideGen in `GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation`, submitted to MICCAI 2024.
-The paper is now available at [arxiv](https://arxiv.org/pdf/2403.07247.pdf).
 
 ## Code
 Relevant training & test code will be made publicly available shortly <3. You can familiarize yourself with the methodology of [CCDM](https://github.com/LarsDoorenbos/ccdm-stochastic-segmentation) and [LDM](https://github.com/CompVis/latent-diffusion) first. These are modified and combined in our paper to cope with our goal of joint CT & anatomical mask generation.
@@ -16,17 +15,4 @@ Relevant training & test code will be made publicly available shortly <3. You ca
 <img src="https://github.com/OvO1111/JointImageGeneration/assets/43473365/949ca811-1b26-4676-88e1-b6942e032cfe" alt="qualitative_results" style="width:100%">
 </figure>
 
-## Citation
-Please cite our work if you wish to use our framework for joint CT and anatomical mask generation at
-
-```
-@misc{dai2024guidegen,
-      title={GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation}, 
-      author={Linrui Dai and Rongzhao Zhang and Zhongzhen Huang and Xiaofan Zhang},
-      year={2024},
-      eprint={2403.07247},
-      archivePrefix={arXiv},
-      primaryClass={eess.IV}
-}
-```
 
