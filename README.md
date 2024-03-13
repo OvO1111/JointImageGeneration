@@ -1,6 +1,9 @@
 # JointImageGeneration
-official implementation of GuideGen for MICCAI2024: GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation
+official implementation of GuideGen in `GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation`, submitted to MICCAI 2024.
+The paper is now available at https://arxiv.org/pdf/2403.07247.pdf.
+
 Please cite our work if you wish to use our framework for joint CT and anatomical mask generation at
+
 ```
 @misc{dai2024guidegen,
       title={GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation}, 
