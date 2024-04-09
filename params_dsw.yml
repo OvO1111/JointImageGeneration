@@ -28,7 +28,7 @@ dims: 3
 
 optim:
     name: "AdamW"
-    learning_rate: 1.0e-3
+    learning_rate: 1.0e-4
     lr_function: "polynomial"
     lr_params:
         power: 1.0     # setting to 1.0 means linear decay
@@ -58,7 +58,7 @@ validation_freq: 1
 display_freq: 100
 save_freq: 1000
 n_validation_predictions: 1
-n_validation_images: 5
+n_validation_images: null
 train_vis_freq: 200
 
 wandb: no 

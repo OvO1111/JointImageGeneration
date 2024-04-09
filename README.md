@@ -1,76 +1,18 @@
-# Stochastic Segmentation with Conditional Categorical Diffusion Models
+# Joint CT & Anatomical Mask Generation
+Official implementation of GuideGen in `GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation`, submitted to MICCAI 2024.
 
-The official code repo for the paper [Stochastic Segmentation with Conditional Categorical Diffusion Models](https://arxiv.org/abs/2303.08888), accepted at the International Conference on Computer Vision 2023.
+## Code
+Relevant training & test code will be made publicly available shortly <3. You can familiarize yourself with the methodology of [CCDM](https://github.com/LarsDoorenbos/ccdm-stochastic-segmentation) and [LDM](https://github.com/CompVis/latent-diffusion) first. These are modified and combined in our paper to cope with our goal of joint CT & anatomical mask generation.
 
-### Abstract: 
-Semantic segmentation has made significant progress in recent years thanks to deep neural networks, but the common objective of generating a single segmentation output that accurately matches the image's content may not be suitable for safety-critical domains such as medical diagnostics and autonomous driving. Instead, multiple possible correct segmentation maps may be required to reflect the true distribution of annotation maps. In this context, stochastic semantic segmentation methods must learn to predict conditional distributions of labels given the image, but this is challenging due to the typically multimodal distributions, high-dimensional output spaces, and limited annotation data. To address these challenges, we propose a conditional categorical diffusion model (CCDM) for semantic segmentation based on Denoising Diffusion Probabilistic Models. Our model is conditioned to the input image, enabling it to generate multiple segmentation label maps that account for the aleatoric uncertainty arising from divergent ground truth annotations. Our experimental results show that CCDM achieves state-of-the-art performance on LIDC, a stochastic semantic segmentation dataset, and outperforms established baselines on the classical segmentation dataset Cityscapes.
+## Teasers
+<figure>
+<figcaption align = "center"><b>Overall pipeline for GuideGen</b>. At inference time, given a text condition (white), the volumetric mask sampler (yellow) outputs a corresponding segmentation mask for major abdominal organs and tumor site. This mask is upsampled and sliced before passing into the conditional image generator (blue) to generate the CT volume autoregressively.</figcaption>
+<img src="https://github.com/OvO1111/JointImageGeneration/assets/43473365/9a310e25-d7d8-4613-b8f8-4f1e2df0cf3c" alt="pipeline" style="width:100%">
+</figure>
 
-<img src="assets/teaser.png" width="621" height="304" />
-
-
-## Installation
-Requires Python 3.10 and Torch 1.7.0 (see `requirements.txt`):
-```
-pip install -r requirements.txt
-```
-
-## Datasets
-
-## Cityscapes
-Download from here: [Cityscapes dataset](https://www.cityscapes-dataset.com/).
-Please switch to branch `cts` for the experiments on Cityscapes dataset and follow Cityscapes.md for instructions.
-
-## LIDC
-For LIDCv1: We used the data available on [Stefan Knegt's gihub page](https://github.com/stefanknegt/Probabilistic-Unet-Pytorch).
-
-For LIDCv2:  This split of LIDC can be found on the github page of [Hierarchical Probabilistic U-Net](https://github.com/deepmind/deepmind-research/tree/master/hierarchical_probabilistic_unet) or from this [Google Drive link](https://drive.google.com/drive/folders/13KWz8GS5Agrg8vg-N2CLa_ltEWGRWvWd).
-### Training (Segmentation with multiple annotations)
-For training on LIDCv1, copy the dataset to `${TMPDIR}/data_lidc.hdf5`, and, in `params.yml`, set:
-```
-dataset_file: datasets.lidc
-```
-
-To run the training:
-```
-python ddpm_train.py params.yml
-```
-
-### Evaluation
-For evalution on LIDC, in `params_eval.yml`, set:
-```
-dataset_file: datasets.lidc
-```
-
-To run the evaluation:
-```
-python ddpm_eval.py params_eval.yml
-```
-
-## Pretrained models
-
-You can find a pretrained model for LIDCv1 along with the parameter file needed for evaluating it [here](https://drive.google.com/drive/folders/1pcXOZpQlSLJOOhId6yZa_3vYS-L0nA4S).
-
-You can find the code to train and evaluate models on cityscapes as well as a cdm_dino_256x512 checkpoint in the releases. 
-
-## Citation
-If you find our work relevant to your research, please cite:
-```
-@article{zbinden2023stochastic,
-  title={Stochastic Segmentation with Conditional Categorical Diffusion Models},
-  author={Zbinden, Lukas and Doorenbos, Lars and Pissas, Theodoros and Sznitman, Raphael and M{\'a}rquez-Neila, Pablo},
-  journal={arXiv preprint arXiv:2303.08888},
-  year={2023}
-}
-```
-
-## License
-The code is published under the [MIT License](LICENSE).
-
-## Updates
-- 15/03/2023 Initial commit.
-- 10/05/2023 Added new branch for cityscapes experiments and released cdm_dino checkpoint.
+<figure>
+<figcaption align = "center"><b>Comparative Results with other Methods</b>. Colored regions on the right represent different organ masks and green area marked in each figure represents generated tumor site. Green, red and blue boxes on generated masks represent synthesized tumor masks that is well-positioned, misplaced or missing with respect to the text condition (which is exhibited as real tumor locations in the Original Anatomies). </figcaption>
+<img src="https://github.com/OvO1111/JointImageGeneration/assets/43473365/949ca811-1b26-4676-88e1-b6942e032cfe" alt="qualitative_results" style="width:100%">
+</figure>
 
 
-## Acknowledgements
-We made base our implementation of Dino as feature extractor on https://github.com/ShirAmir/dino-vit-features/blob/main/extractor.py
-and also make use the official checkpoints from https://github.com/facebookresearch/dino. We thank their respective authors for open-sourcing.

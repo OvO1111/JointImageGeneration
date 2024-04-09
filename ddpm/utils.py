@@ -5,7 +5,8 @@ from typing import Union
 
 import numpy as np
 import torch
-from PIL import Image
+import math
+from PIL import Image, ImageDraw, ImageFont
 from scipy.optimize import linear_sum_assignment
 from torch import Tensor
 from torch import nn
@@ -94,35 +95,95 @@ def worker_init_fn(_):
 
 def _onehot_to_color_image(source, params):
     target = _onehot_to_cityscape_color_image(source)
-    
     return target
 
 
+def _add_number_to_image(image: np.ndarray, text, nrow, ncol):
+    if not isinstance(nrow, int):
+        nrow = math.ceil(nrow)
+    if not isinstance(ncol, int):
+        ncol = math.ceil(ncol)
+    img = Image.fromarray((image.data.permute(1, 2, 0).cpu().numpy()*255).astype(np.uint8))
+    font = ImageFont.truetype('/mnt/data/oss_beijing/dailinrui/data/resources/fonts/truetype/Arial-Unicode-Bold.ttf', size=15)
+    d = ImageDraw.Draw(img)
+    text = torch.nn.functional.pad(text, (0, nrow * ncol - len(text)), "constant", text[-1])
+    index = 0
+    row_step = img.size[1] // nrow
+    col_step = img.size[0] // ncol
+    for col in range(0, nrow):
+        for row in range(0, ncol):
+            d.text((row_step * row, col_step * col), str(text[index].cpu().item()), fill="black", font=font)
+            index += 1
+    ys = torch.tensor(np.asarray(img)).permute(2, 0, 1)
+    return ys
+
+
+def _make_image_from_text(image: np.ndarray, text: list, nrow, ncol):
+    if not isinstance(nrow, int):
+        nrow = math.ceil(nrow)
+    if not isinstance(ncol, int):
+        ncol = math.ceil(ncol)
+    image[...] = 1
+    img = Image.fromarray((image.data.permute(1, 2, 0).cpu().numpy()*255).astype(np.uint8))
+    font_size = 10
+    font = ImageFont.truetype('/mnt/data/oss_beijing/dailinrui/data/resources/fonts/truetype/Arial-Unicode-Bold.ttf', size=font_size)
+    d = ImageDraw.Draw(img)
+    if len(text) < nrow * ncol:
+        text.extend([text[-1]] * (nrow * ncol - len(text)))
+    index = 0
+    row_step = img.size[1] // nrow
+    col_step = img.size[0] // ncol
+    for col in range(0, nrow):
+        for row in range(0, ncol):
+            # make text fit in the grid image
+            fulltext = text[index] if len(text[index]) < 80 else text[index][:80] + "..."
+            nc = round(len(fulltext) / math.ceil(font.getlength(fulltext) / col_step))
+            lines = "\n".join(fulltext[start:start + nc] for start in range(0, len(fulltext), nc))
+            d.text((row_step * row, col_step * col), lines, fill="black", font=font)
+            index += 1
+    ys = torch.tensor(np.asarray(img)).permute(2, 0, 1)
+    return ys
+
+
 def _onehot_to_cityscape_color_image(arr: Tensor):
-    from datasets.cityscapes_config import decode_target_to_color
+    from datasets.cityscapes_config import decode_target_to_crc_color
     if len(arr.shape) == 4:
         B, C, H, W = arr.size()
-        arr = arr.argmax(dim=1, keepdim=True)
-        arr = decode_target_to_color(arr)
+        if C != 1:
+            arr = arr.argmax(dim=1, keepdim=True)
+        arr = decode_target_to_crc_color(arr)
         arr = arr.permute(0, 4, 2, 3, 1)
         arr = torch.squeeze(arr)
 
     elif len(arr.shape) == 3:
         C, H, W = arr.size()
         B = 1
-        arr = arr.argmax(dim=0, keepdim=True)
-        arr = decode_target_to_color(arr)
+        if C != 1:
+            arr = arr.argmax(dim=0, keepdim=True)
+        arr = decode_target_to_crc_color(arr)
         arr = arr.permute((3, 1, 2, 0))
         arr = torch.squeeze(arr)
         assert arr.shape == (C, H, W), f"{arr.shape} {C} {H} {W}"
     else:
-        raise NotImplementedError
+        if len(arr.shape) == 5:
+            # 3D case
+            B, C, H, W, D = arr.size()
+            if C != 1:
+                arr = arr[0].argmax(dim=0, keepdim=True)
+            arr = decode_target_to_crc_color(arr)
+            arr = arr.squeeze(0).permute(0, 3, 1, 2)
+        else:
+            raise NotImplementedError
 
     if B == 1:
         arr = torch.unsqueeze(arr, dim=0)
-    assert arr.shape == (B, 3, H, W), f"{arr.shape} {B} {C} {H} {W}"
-
-    return arr / 255
+    if arr.shape == (B, 3, H, W):
+        return arr / 255
+    arr = arr.squeeze(0)
+    if arr.shape == (H, 3, W, D):
+        return arr[None] / 255
+    else:
+        raise NotImplementedError(f"{arr.shape} {B} {C} {H} {W}")
 
 
 # LIDC

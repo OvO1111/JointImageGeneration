@@ -44,7 +44,7 @@ class DiffusionModel(nn.Module):
     alphas: Tensor
     cumalphas: Tensor
 
-    def __init__(self, schedule: str, time_steps: int, num_classes: int, schedule_params=None):
+    def __init__(self, schedule: str, time_steps: int, num_classes: int, schedule_params=None, dims=3):
         super().__init__()
 
         schedule_func = {
@@ -59,6 +59,7 @@ class DiffusionModel(nn.Module):
                         f" with time steps={time_steps}")
             betas, alphas, cumalphas = schedule_func(time_steps)
 
+        self.dims = dims
         self.register_buffer("betas", betas)
         self.register_buffer("alphas", alphas)
         self.register_buffer("cumalphas", cumalphas)
@@ -74,6 +75,7 @@ class DiffusionModel(nn.Module):
 
         betas = self.betas[t]
         betas = betas[..., None, None, None]
+        if self.dims == 3: betas = betas[..., None]
         probs = (1 - betas) * xtm1 + betas / self.num_classes
         return OneHotCategoricalBCHW(probs)
 
@@ -82,6 +84,7 @@ class DiffusionModel(nn.Module):
 
         cumalphas = self.cumalphas[t]
         cumalphas = cumalphas[..., None, None, None]
+        if self.dims == 3: cumalphas = cumalphas[..., None]
         probs = cumalphas * x0 + (1 - cumalphas) / self.num_classes
         return OneHotCategoricalBCHW(probs)
 
@@ -90,6 +93,9 @@ class DiffusionModel(nn.Module):
 
         alphas_t = self.alphas[t][..., None, None, None]
         cumalphas_tm1 = self.cumalphas[t - 1][..., None, None, None]
+        if self.dims == 3:
+            alphas_t = alphas_t[..., None]
+            cumalphas_tm1 = cumalphas_tm1[..., None]
         alphas_t[t == 0] = 0.0
         cumalphas_tm1[t == 0] = 1.0
         theta = ((alphas_t * xt + (1 - alphas_t) / self.num_classes) *
@@ -109,11 +115,15 @@ class DiffusionModel(nn.Module):
 
         alphas_t = self.alphas[t][..., None, None, None]
         cumalphas_tm1 = self.cumalphas[t - 1][..., None, None, None, None]
+        if self.dims == 3:
+            alphas_t = alphas_t[..., None]
+            cumalphas_tm1 = cumalphas_tm1[..., None]
         alphas_t[t == 0] = 0.0
         cumalphas_tm1[t == 0] = 1.0
 
         # We need to evaluate theta_post for all values of x0
         x0 = torch.eye(self.num_classes, device=xt.device)[None, :, :, None, None]
+        if self.dims == 3: x0 = x0[..., None]
         # theta_xt_xtm1.shape == [B, C, H, W]
         theta_xt_xtm1 = alphas_t * xt + (1 - alphas_t) / self.num_classes
         # theta_xtm1_x0.shape == [B, C1, C2, H, W]
@@ -124,16 +134,18 @@ class DiffusionModel(nn.Module):
         theta_xtm1_xtx0 = aux / aux.sum(dim=1, keepdim=True)
 
         # theta_x0.shape = [B, C, H, W]
-
-        return torch.einsum("bcdhw,bdhw->bchw", theta_xtm1_xtx0, theta_x0)
+        out = torch.einsum("bcdlhw,bdlhw->bclhw", theta_xtm1_xtx0, theta_x0) if self.dims == 3 else\
+            torch.einsum("bcdhw,bdhw->bchw", theta_xtm1_xtx0, theta_x0)
+        return out
 
 
 class DenoisingModel(nn.Module):
 
-    def __init__(self, diffusion: DiffusionModel, unet: nn.Module, dataset_file: str, step_T_sample:str = "majority"):
+    def __init__(self, diffusion: DiffusionModel, unet: nn.Module, dataset_file: str, step_T_sample:str = "majority", dims=3):
         super().__init__()
         self.diffusion = diffusion
         self.unet = unet
+        self.dims = dims
         self.dataset_file = dataset_file
         self.step_T_sample = step_T_sample
 
@@ -142,27 +154,27 @@ class DenoisingModel(nn.Module):
         return self.diffusion.time_steps
 
     def forward(self, x: Tensor, condition: Tensor, feature_condition: Tensor = None, t: Optional[Tensor] = None, label_ref_logits: Optional[Tensor] = None,
-                validation: bool = False) -> Union[Tensor, dict]:
+                validation: bool = False, context=None) -> Union[Tensor, dict]:
 
         if self.training:
             if not isinstance(t, Tensor):
                 raise ValueError("'t' needs to be a Tensor at training time")
             if not isinstance(x, Tensor):
                 raise ValueError("'x' needs to be a Tensor at training time")
-            return self.forward_step(x, condition, feature_condition, t) 
+            return self.forward_step(x, condition, feature_condition, t, context=context) 
         else:
             if validation:
-                return self.forward_step(x, condition, feature_condition, t)
+                return self.forward_step(x, condition, feature_condition, t, context=context)
             if t is None:
-                return self.forward_denoising(x, condition, feature_condition, label_ref_logits=label_ref_logits)
+                return self.forward_denoising(x, condition, feature_condition, label_ref_logits=label_ref_logits, context=context)
 
-            return self.forward_denoising(x, condition, feature_condition, cast(int, t.item()), label_ref_logits)
+            return self.forward_denoising(x, condition, feature_condition, cast(int, t.item()), label_ref_logits, context=context)
 
-    def forward_step(self, x: Tensor, condition: Tensor, feature_condition: Tensor, t: Tensor) -> Tensor:
-        return self.unet(x, condition, feature_condition=feature_condition, timesteps=t)
+    def forward_step(self, x: Tensor, condition: Tensor, feature_condition: Tensor, t: Tensor, context: Tensor=None) -> Tensor:
+        return self.unet(x, condition, feature_condition=feature_condition, timesteps=t, context=context)
 
     def forward_denoising(self, x: Optional[Tensor], condition: Tensor, feature_condition: Tensor, init_t: Optional[int] = None,
-                          label_ref_logits: Optional[Tensor] = None) -> dict:
+                          label_ref_logits: Optional[Tensor] = None, context: Tensor=None) -> dict:
 
         if init_t is None:
             init_t = self.time_steps
@@ -191,7 +203,7 @@ class DenoisingModel(nn.Module):
             t_ = torch.full(size=(shape[0],), fill_value=t, device=xt.device)
 
             # Predict the noise of x_t
-            ret = self.unet(xt, condition, feature_condition, t_.float())
+            ret = self.unet(xt, condition, feature_condition, t_.float(), context=context)
             x0pred = ret["diffusion_out"]
 
             probs = self.diffusion.theta_post_prob(xt, x0pred, t_)

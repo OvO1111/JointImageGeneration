@@ -107,7 +107,7 @@ class Upsample(nn.Module):
         assert x.shape[1] == self.channels
         if self.dims == 3:
             x = F.interpolate(
-                x, (x.shape[2], x.shape[3] * 2, x.shape[4] * 2), mode="nearest"
+                x, (x.shape[2] * 2, x.shape[3] * 2, x.shape[4] * 2), mode="nearest"
             )
         else:
             x = F.interpolate(x, scale_factor=2, mode="nearest")
@@ -132,7 +132,7 @@ class Downsample(nn.Module):
         self.out_channels = out_channels or channels
         self.use_conv = use_conv
         self.dims = dims
-        stride = 2 if dims != 3 else (1, 2, 2)
+        stride = 2 if dims != 3 else (2, 2, 2)
         if use_conv:
             self.op = conv_nd(
                 dims, self.channels, self.out_channels, 3, stride=stride, padding=1
@@ -453,7 +453,12 @@ class UNetModel(nn.Module):
         use_new_attention_order=False,
         softmax_output=True,
         ce_head=False,
-        feature_cond_encoder=None
+        feature_cond_encoder=None,
+        use_spatial_transformer=False,
+        transformer_depth=None,
+        context_dim=None,
+        disabled_sa=False,
+        use_linear_in_transformer=False,
     ):
         super().__init__()
 
@@ -496,8 +501,8 @@ class UNetModel(nn.Module):
                 elif feature_cond_encoder['scale'] == 'multi':
                     raise NotImplementedError(f"feature_cond_encoder {feature_cond_encoder['type']} with scale"
                                               f" {feature_cond_encoder['scale']} not implemented")
-            else:
-                raise NotImplementedError(f"{feature_cond_encoder['type']} not implemented")
+            # else:
+            #     raise NotImplementedError(f"{feature_cond_encoder['type']} not implemented")
         else:
             self.feature_condition_idx = []
 
@@ -577,7 +582,10 @@ class UNetModel(nn.Module):
                             num_heads=num_heads,
                             num_head_channels=num_head_channels,
                             use_new_attention_order=use_new_attention_order,
-                        )
+                        ) if not use_spatial_transformer else SpatialTransformer(
+                                ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
+                                disable_self_attn=disabled_sa, use_linear=use_linear_in_transformer,
+                                use_checkpoint=use_checkpoint)
                     )
                 self.input_blocks.append(TimestepEmbedSequential(*layers))
                 input_blocks_cnt += 1
@@ -632,7 +640,10 @@ class UNetModel(nn.Module):
                 num_heads=num_heads,
                 num_head_channels=num_head_channels,
                 use_new_attention_order=use_new_attention_order,
-            ),
+            ) if not use_spatial_transformer else SpatialTransformer(
+                                ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
+                                disable_self_attn=disabled_sa, use_linear=use_linear_in_transformer,
+                                use_checkpoint=use_checkpoint),
             ResBlock(
                 ch,
                 time_embed_dim,
@@ -676,7 +687,10 @@ class UNetModel(nn.Module):
                             num_heads=num_heads_upsample,
                             num_head_channels=num_head_channels,
                             use_new_attention_order=use_new_attention_order,
-                        )
+                        ) if not use_spatial_transformer else SpatialTransformer(
+                                ch, num_heads, dim_head, depth=transformer_depth, context_dim=context_dim,
+                                disable_self_attn=disabled_sa, use_linear=use_linear_in_transformer,
+                                use_checkpoint=use_checkpoint)
                     )
                 if level and i == num_res_blocks:
                     out_ch = ch
@@ -741,7 +755,7 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
 
-    def forward(self, x, input_condition, feature_condition, timesteps, y=None):
+    def forward(self, x, input_condition, feature_condition, timesteps, context=None, y=None):
         """
         Apply the model to an input batch.
 
@@ -757,8 +771,9 @@ class UNetModel(nn.Module):
         hs = []
         emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
 
-        x = th.cat([x, input_condition], dim=1)
-        context = None
+        if input_condition is not None:
+            x = th.cat([x, input_condition], dim=1)
+        # context = None
 
         if self.num_classes is not None:
             assert y.shape == (x.shape[0],)

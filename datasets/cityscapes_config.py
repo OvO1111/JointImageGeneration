@@ -69,6 +69,37 @@ classes = [
     CityscapesClass('license plate', -1, 255, 'vehicle', 7, False, True, (0, 0, 142)),
 ]
 
+OrganClass = namedtuple("OrganClass", ["label_name", "totalseg_id", "color"])
+abd_organ_classes = [
+    OrganClass("unlabeled", 0, (255, 255, 255)),
+    OrganClass("spleen", 1, (0, 80, 100)),
+    OrganClass("kidney_left", 2, (119, 11, 32)),
+    OrganClass("kidney_right", 3, (119, 11, 32)),
+    OrganClass("liver", 5, (250, 170, 30)),
+    OrganClass("stomach", 6, (220, 220, 0)),
+    OrganClass("pancreas", 10, (107, 142, 35)),
+    OrganClass("small_bowel", 55, (0, 255, 0)),
+    OrganClass("duodenum", 56, (70, 130, 180)),
+    OrganClass("colon", 57, (0, 0, 255)),
+    OrganClass("crc", -1, (255, 0, 0))
+]
+
+crc_classes = [
+    # CityscapesClass('unlabeled', 0, 255, 'void', 0, False, False, (255, 255, 255)),
+    CityscapesClass('spleen', 1, 255, 'void', 0, False, False, (255, 0, 0)),
+    CityscapesClass('kidney_left', 32, 17, 'vehicle', 7, False, False, (0, 80, 100)),
+    CityscapesClass('kdiney_right', 33, 18, 'vehicle', 7, False, False, (119, 11, 32)),
+    CityscapesClass('liver', 2, 255, 'void', 0, False, False, (0, 0, 255),),
+    CityscapesClass('stomach', 3, 6, 'void', 3, False, False, (250, 170, 30)),
+    CityscapesClass('pancreas', 4, 7, 'void', 3, False, False, (220, 220, 0)),
+    CityscapesClass('small_bowel', 5, 8, 'void', 4, False, False, (107, 142, 35)),
+    CityscapesClass('duodenum', 6, 9, 'void', 4, False, False, (152, 251, 152)),
+    CityscapesClass('colon', 7, 10, 'void', 4, False, False, (0, 255, 255)),
+    CityscapesClass('urinary_bladder', 8, 11, 'void', 5, False, False, (70, 130, 180)),
+]
+
+train_id_to_crc_color = torch.tensor(np.array([[255, 255, 255]] + [[20 * (ic + 1)] * 3 for ic, c in enumerate(crc_classes)] + [(0, 255, 0)]))
+
 train_id_to_color = [c.color for c in classes if (c.train_id != -1 and c.train_id != 255)]
 train_id_to_color.append([0, 0, 0])
 train_id_to_color = np.array(train_id_to_color)
@@ -109,6 +140,10 @@ def decode_target_to_color(target):
 def decode_target_to_mm_color(target):
     target[target == 255] = 24
     return train_id_to_mm_color_th[target.to(train_id_to_id_th.device)]
+
+
+def decode_target_to_crc_color(target):
+    return train_id_to_crc_color[target.to(train_id_to_id_th.device)]
 
 
 def map_train_id_to_id(target):

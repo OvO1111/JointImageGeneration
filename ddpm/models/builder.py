@@ -21,14 +21,15 @@ def build_model(
         backbone_params: Dict[str, Any],
         dataset_file: str,
         step_T_sample: str = None,
-        feature_cond_encoder: dict = None
+        feature_cond_encoder: dict = None,
+        dims: int = 3
 ) -> DenoisingModel:
 
-    img_shape, label_shape = input_shapes
+    img_shape, label_shape, *_ = input_shapes
     img_channels = img_shape[0]
 
     num_classes = label_shape[0]  
-    diffusion = DiffusionModel(schedule, time_steps, num_classes, schedule_params=schedule_params)
+    diffusion = DiffusionModel(schedule, time_steps, num_classes, schedule_params=schedule_params, dims=dims)
 
     model: nn.Module
 
@@ -40,6 +41,7 @@ def build_model(
             num_res_blocks=2,
             cond_encoded_shape=cond_encoded_shape,
             feature_cond_encoder=feature_cond_encoder,
+            dims=dims,
             **backbone_params
         )
     else:
@@ -48,4 +50,4 @@ def build_model(
     num_of_parameters = sum(map(torch.numel, model.parameters()))
     LOGGER.info("%s trainable params: %d", backbone, num_of_parameters)
 
-    return DenoisingModel(diffusion, model, dataset_file, step_T_sample)
+    return DenoisingModel(diffusion, model, dataset_file, step_T_sample, dims)

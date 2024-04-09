@@ -22,7 +22,8 @@ def create_unet_openai(
     use_new_attention_order=False,
     softmax_output=True,
     ce_head=False,
-    feature_cond_encoder=None
+    feature_cond_encoder=None,
+    dims=None,
 ):
 
     if channel_mult is None:
@@ -36,6 +37,9 @@ def create_unet_openai(
             channel_mult = (1, 2, 3, 4)
         else:
             raise ValueError(f"unsupported image size: {image_size}")
+        
+    if dims not in [1, 2, 3]:
+        raise NotImplementedError(f"got convnd dims={dims}")
     
     return UNetModel(
         in_channels=in_channels,
@@ -57,5 +61,6 @@ def create_unet_openai(
         use_new_attention_order=use_new_attention_order,
         softmax_output=softmax_output,
         ce_head=ce_head,
-        feature_cond_encoder=feature_cond_encoder
+        feature_cond_encoder=feature_cond_encoder,
+        dims=dims
     )
