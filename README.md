@@ -2,7 +2,25 @@
 Official implementation of GuideGen in `GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation`, submitted to MICCAI 2024.
 
 ## Code
-Relevant training & test code will be made publicly available shortly <3. You can familiarize yourself with the methodology of [CCDM](https://github.com/LarsDoorenbos/ccdm-stochastic-segmentation) and [LDM](https://github.com/CompVis/latent-diffusion) first. These are modified and combined in our paper to cope with our goal of joint CT & anatomical mask generation.
+Note that you may need to first familiarize yourself with the methodology of [CCDM](https://github.com/LarsDoorenbos/ccdm-stochastic-segmentation) and [LDM](https://github.com/CompVis/latent-diffusion), since these modules are modified and combined in our paper to cope with our goal of joint CT & anatomical mask generation.
+
+Sample training & evaluation code for CCDM
+```
+cd ./ccdm
+# Training
+python ddpm_train.py ./params.yml <exp_name>
+# Evaluation
+python ddpm_eval.py ./params_eval.yml <exp_name>
+```
+
+Sample training and evaluation code for LDM
+```
+cd ./ldm
+# Training
+python main.py --base ./configs/latent-diffusion/<cfg_name> -t --gpus 0, (--resume_from_checkpoint <ckpt_path>)
+# Evaluation
+python sample_diffusion.py -r <ckpt_path> --inputs <stage_1_generated_mask_dir> --batch_size 1
+```
 
 ## Teasers
 <figure>
