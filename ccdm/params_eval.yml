@@ -1,0 +1,66 @@
+output_path: "/mnt/data/smart_health_02/dailinrui/data/pretrained/ccdm/"
+exp_name: local_test
+
+evaluations: 1  # for multiple evaluations with majority vote and for LIDC number of samples
+evaluation_vote_strategy: "confidence"  # One of ["majority", "confidence"]
+
+dataset_file: datasets.ruijin
+dataset_split: 'val'  # One of ['val', 'test']
+dataset_val_max_size: null # One of "null" (=full val size), or any number
+class_weights: "unifrom"  # One of ["uniform", "weighted"]
+# save_qualitative_results:
+#     enable: yes
+#     num_images: 1  # will be doubled for random imgs
+#     num_predictions: 3
+
+# dataset_pipeline_train: ["flip",  "resize", "colorjitter", "torchvision_normalise"]
+# dataset_pipeline_train_settings:
+#     target_size:  [128, 256]
+
+# dataset_pipeline_val: ["resize", "torchvision_normalise"]
+# dataset_pipeline_val_settings:
+#     target_size: [128, 256]
+#     return_original_labels: yes
+
+# evaluation:
+#     resolution: "original"
+#     evaluations: 1  # for multiple evaluations with majority vote
+#     evaluation_vote_strategy: "confidence"  # One of ["majority", "confidence"]
+
+multigpu: no
+distributed: no
+mp_loaders: 16
+batch_size: 3
+max_epochs: 1
+wandb: no
+dims: 3
+
+polyak_alpha: 0.999
+beta_schedule: "cosine" # One of ["cosine", "linear"]
+beta_schedule_params:
+    s: 0.008
+time_steps: 250
+
+backbone: "unet_openai"  # One of ["unetplus", "unet_openai", "resnet50", "resnet101"]
+
+feature_cond_encoder:
+    type: 'none' # ['dino', 'none']
+    model: 'dino_vits8' # 'dino_vitb8
+    channels: 384 # 768 for vitb, 384 for vits
+    conditioning: "concat_pixels_concat_features"
+    output_stride: 8  # at what output_stride in the unet to plug features
+    scale: 'single'
+    train: no
+    source_layer: 11 # layer 11 is always the last layer of any dino vit model
+    target_layer: 10 # at what output_stride in the unet to plug features
+
+
+unet_openai:
+    base_channels: 64  # 64
+    channel_mult: [1, 2, 2, 4, 5]  # [1, 2, 3.5, 4, 5]
+    attention_resolutions: [32, 16, 8]
+    num_heads: 1  # Ignored if num_head_channels is not -1
+    num_head_channels: 32  # If not -1, num_heads is automatically set to channels//num_head_channels
+    softmax_output: yes # this is the default for build_model
+
+load_from: /mnt/workspace/dailinrui/data/pretrained/ccdm/final_ernie_resize_to_64x128x128_w1/model_checkpoint_713000.pt
