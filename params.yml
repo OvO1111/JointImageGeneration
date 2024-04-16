@@ -15,7 +15,7 @@ dataset_pipeline_val: ["resize", "torchvision_normalise"]
 dataset_pipeline_val_settings:
     target_size: [512, 512]
 
-dataset_val_max_size: 100  # One of "null" (=full val size), or any number
+dataset_val_max_size: 10  # One of "null" (=full val size), or any number
 class_weights: "uniform"
 
 multigpu: no
@@ -46,7 +46,7 @@ diffusion_type: "categorical"
 time_steps: 1000
 
 feature_cond_encoder:
-    type: 'selfattn' # ['dino', 'none']
+    type: 'none' # ['dino', 'none']
     embed_dim: 768 # 768 for vitb, 384 for vits
     n_heads: 8
     model_depth: 4
@@ -59,7 +59,7 @@ display_freq: 100
 save_freq: 1000
 n_validation_predictions: 1
 n_validation_images: 5
-train_vis_freq: 200
+train_vis_freq: 5000
 
 wandb: no 
 wandb_mode: 'offline'  # ['online', 'offline']
@@ -73,6 +73,8 @@ unet_openai:
     num_heads: 1  # Ignored if num_head_channels is not -1
     num_head_channels: 32  # If not -1, num_heads is automatically set to channels//num_head_channels
     softmax_output: yes # this is the default for build_model
+    use_checkpoint: yes
+    context_dim: 5120
 
 load_from: null
 

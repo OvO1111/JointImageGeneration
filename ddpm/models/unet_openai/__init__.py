@@ -10,7 +10,7 @@ def create_unet_openai(
     num_res_blocks,
     cond_encoded_shape,
     channel_mult=None,
-    use_checkpoint=False,
+    use_checkpoint=True,
     attention_resolutions=[32, 16, 8],
     num_heads=1,
     num_head_channels=-1,
@@ -23,7 +23,7 @@ def create_unet_openai(
     softmax_output=True,
     ce_head=False,
     feature_cond_encoder=None,
-    dims=None,
+    dims=None, **kwargs
 ):
 
     if channel_mult is None:
@@ -62,5 +62,5 @@ def create_unet_openai(
         softmax_output=softmax_output,
         ce_head=ce_head,
         feature_cond_encoder=feature_cond_encoder,
-        dims=dims
+        dims=dims, **kwargs
     )

@@ -274,8 +274,8 @@ class Trainer:
         context = None if text is None else batch.get("context")
 
         self.model.train()
-        if self.params['feature_cond_encoder']['train']:
-            self.feature_cond_encoder.train()
+        # if self.params['feature_cond_encoder']['train']:
+        #     self.feature_cond_encoder.train()
 
         self.shape = x0.shape[1:]
 
@@ -284,7 +284,8 @@ class Trainer:
         x0 = x0.to(device, non_blocking=True)
 
         condition = image
-        context = self.feature_cond_encoder(context) if self.feature_cond_polyak else None
+        context = context.to(device)
+        # context = self.feature_cond_encoder(context) if self.feature_cond_polyak else None
         # if isinstance(feature_condition, dict):
         #     for name, feature in feature_condition.items():
         #         feature_condition[name] = feature_condition[name].contiguous()
@@ -338,7 +339,7 @@ class Trainer:
         if self.feature_cond_polyak:
             self.feature_cond_polyak.update()
 
-        if engine.state.epoch > 0 and engine.state.epoch % self.params["train_vis_freq"] == 0 and engine.state.iteration == 1:
+        if engine.state.epoch > 0 and engine.state.iteration % self.params["train_vis_freq"] == 0:
             # save tensorboard results
             xt = _onehot_to_color_image(xt, self.params)[0]
             x = _onehot_to_color_image(x0, self.params)[0]

@@ -12,7 +12,7 @@
             "program": "./ddpm_train.py",
             "console": "integratedTerminal",
             "justMyCode": true,
-            "args": ["params_dsw.yml"],
+            "args": ["params.yml"],
             // "args": ["params_eval.yml"],
             "purpose": ["debug-in-terminal"]
         },

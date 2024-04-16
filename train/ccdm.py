@@ -7,6 +7,7 @@ import torch
 from torch import Tensor
 from torch import nn
 import numpy as np
+from tqdm import tqdm
 
 from train.utils import get_cls_from_pkg
 from torch.distributions import OneHotCategorical
@@ -21,13 +22,15 @@ def linear_schedule(time_steps: int, start=1e-2, end=0.2) -> Tuple[Tensor, Tenso
     betas = torch.linspace(start, end, time_steps)
     alphas = 1 - betas
     cumalphas = torch.cumprod(alphas, dim=0)
-    return betas, alphas, cumalphas
+    cumalphas_prev = torch.cat([torch.tensor((1,)), cumalphas[:-1]])
+    return betas, alphas, cumalphas, cumalphas_prev
 
 
 def cosine_schedule(time_steps: int, s: float = 8e-3) -> Tuple[Tensor, Tensor, Tensor]:
     t = torch.arange(0, time_steps)
     s = 0.008
     cumalphas = torch.cos(((t / time_steps + s) / (1 + s)) * (math.pi / 2)) ** 2
+    cumalphas_prev = torch.cat([torch.tensor((1,)), cumalphas[:-1]])
 
     def func(t): return math.cos((t + s) / (1.0 + s) * math.pi / 2) ** 2
 
@@ -38,7 +41,38 @@ def cosine_schedule(time_steps: int, s: float = 8e-3) -> Tuple[Tensor, Tensor, T
         betas_.append(min(1 - func(t2) / func(t1), 0.999))
     betas = torch.tensor(betas_)
     alphas = 1 - betas
-    return betas, alphas, cumalphas
+    return betas, alphas, cumalphas, cumalphas_prev
+
+
+def make_ddim_timesteps(ddim_discr_method, num_ddim_timesteps, num_ddpm_timesteps, verbose=True):
+    if ddim_discr_method == 'uniform':
+        c = num_ddpm_timesteps // num_ddim_timesteps
+        ddim_timesteps = np.asarray(list(range(0, num_ddpm_timesteps, c)))
+    elif ddim_discr_method == 'quad':
+        ddim_timesteps = ((np.linspace(0, np.sqrt(num_ddpm_timesteps * .8), num_ddim_timesteps)) ** 2).astype(int)
+    else:
+        raise NotImplementedError(f'There is no ddim discretization method called "{ddim_discr_method}"')
+
+    # assert ddim_timesteps.shape[0] == num_ddim_timesteps
+    # add one to get the final alpha values right (the ones from first scale to data during sampling)
+    steps_out = ddim_timesteps + 1
+    if verbose:
+        print(f'Selected timesteps for ddim sampler: {steps_out}')
+    return steps_out
+
+
+def make_ddim_sampling_parameters(alphacums, ddim_timesteps, eta, verbose=True):
+    # select alphas for computing the variance schedule
+    alphas = alphacums[ddim_timesteps]
+    alphas_prev = np.asarray([alphacums[0]] + alphacums[ddim_timesteps[:-1]].tolist())
+
+    # according the the formula provided in https://arxiv.org/abs/2010.02502
+    sigmas = eta * np.sqrt((1 - alphas_prev) / (1 - alphas) * (1 - alphas / alphas_prev))
+    if verbose:
+        print(f'Selected alphas for ddim sampler: a_t: {alphas}; a_(t-1): {alphas_prev}')
+        print(f'For the chosen value of eta, which is {eta}, '
+              f'this results in the following sigma_t schedule for ddim sampler {sigmas}')
+    return sigmas, alphas, alphas_prev
 
 
 class OneHotCategoricalBCHW(OneHotCategorical):
@@ -92,6 +126,7 @@ class DiffusionModel(nn.Module):
     betas: Tensor
     alphas: Tensor
     cumalphas: Tensor
+    cumalphas_prev: Tensor
 
     def __init__(self, schedule: str, time_steps: int, num_classes: int, schedule_params=None, dims=3):
         super().__init__()
@@ -102,16 +137,17 @@ class DiffusionModel(nn.Module):
         }[schedule]
         if schedule_params is not None:
             LOGGER.info(f"noise schedule '{schedule}' with params {schedule_params} with time steps={time_steps}")
-            betas, alphas, cumalphas = schedule_func(time_steps, **schedule_params)
+            betas, alphas, cumalphas, cumalphas_prev = schedule_func(time_steps, **schedule_params)
         else:
             LOGGER.info(f"noise schedule '{schedule}' with default params (schedule_params = {schedule_params})"
                         f" with time steps={time_steps}")
-            betas, alphas, cumalphas = schedule_func(time_steps)
+            betas, alphas, cumalphas, cumalphas_prev = schedule_func(time_steps)
 
         self.dims = dims
         self.register_buffer("betas", betas)
         self.register_buffer("alphas", alphas)
         self.register_buffer("cumalphas", cumalphas)
+        self.register_buffer("cumalphas_prev", cumalphas_prev)
 
         self.num_classes = num_classes
 
@@ -121,7 +157,6 @@ class DiffusionModel(nn.Module):
 
     def q_xt_given_xtm1(self, xtm1: Tensor, t: Tensor) -> OneHotCategoricalBCHW:
         t = t - 1
-
         betas = self.betas[t]
         betas = betas[..., None, None, None]
         if self.dims == 3: betas = betas[..., None]
@@ -130,7 +165,6 @@ class DiffusionModel(nn.Module):
 
     def q_xt_given_x0(self, x0: Tensor, t: Tensor) -> OneHotCategoricalBCHW:
         t = t - 1
-
         cumalphas = self.cumalphas[t]
         cumalphas = cumalphas[..., None, None, None]
         if self.dims == 3: cumalphas = cumalphas[..., None]
@@ -139,7 +173,6 @@ class DiffusionModel(nn.Module):
 
     def theta_post(self, xt: Tensor, x0: Tensor, t: Tensor) -> Tensor:
         t = t - 1
-
         alphas_t = self.alphas[t][..., None, None, None]
         cumalphas_tm1 = self.cumalphas[t - 1][..., None, None, None]
         if self.dims == 3:
@@ -161,7 +194,6 @@ class DiffusionModel(nn.Module):
         use theta_post instead.
         """
         t = t - 1
-
         alphas_t = self.alphas[t][..., None, None, None]
         cumalphas_tm1 = self.cumalphas[t - 1][..., None, None, None, None]
         if self.dims == 3:
@@ -222,18 +254,15 @@ class DenoisingModel(nn.Module):
 
     def forward_denoising(self, x: Optional[Tensor], condition: Tensor, feature_condition: Tensor, init_t: Optional[int] = None,
                           label_ref_logits: Optional[Tensor] = None, context: Tensor=None) -> dict:
-
         if init_t is None:
             init_t = self.time_steps
 
         xt = x
-
         if label_ref_logits is not None:
             weights = self.guidance_scale_weights(label_ref_logits)
             label_ref = label_ref_logits.argmax(dim=1)
 
         shape = xt.shape
-
         if init_t > 10000:
             K = init_t % 10000
             assert 0 < K <= self.time_steps
@@ -244,7 +273,7 @@ class DenoisingModel(nn.Module):
                 LOGGER.warning(f"Override default {self.time_steps} time steps with {len(t_values)}.")
         else:
             t_values = range(init_t, 0, -1)
-
+            
         for t in t_values:
             # Auxiliary values
             t_ = torch.full(size=(shape[0],), fill_value=t, device=xt.device)
@@ -252,14 +281,11 @@ class DenoisingModel(nn.Module):
             # Predict the noise of x_t
             ret = self.unet(xt, condition, feature_condition, t_.float(), context=context)
             x0pred = ret["diffusion_out"]
-
             probs = self.diffusion.theta_post_prob(xt, x0pred, t_)
-
             if label_ref_logits is not None:
                 if self.guidance_scale > 0:
                     gradients = self.guidance_fn(probs, label_ref if self.guidance_loss_fn_name == 'CE' else label_ref_logits, weights)
                     probs = probs - gradients
-
             probs = torch.clamp(probs, min=1e-12)
 
             if t > 1:
@@ -272,24 +298,6 @@ class DenoisingModel(nn.Module):
 
         ret = {"diffusion_out": xt}
         return ret
-
-    def _check_tensor(self, tensor: Tensor) -> list:
-
-        invalid_values = []
-
-        if torch.isnan(tensor).any():
-            LOGGER.error("nan found in tensor!!")
-            invalid_values.append("nan")
-
-        if torch.isinf(tensor).any():
-            LOGGER.error("inf found in tensor!!")
-            invalid_values.append("inf")
-
-        if (tensor.sum(dim=1) < -1e-3).any():
-            LOGGER.error("negative KL divergence in tensor!!")
-            invalid_values.append("neg")
-
-        return invalid_values
     
     
 class CategoricalDiffusionModel(nn.Module):
@@ -302,10 +310,108 @@ class CategoricalDiffusionModel(nn.Module):
                                      out_channels=num_classes)
         self.denoising_model = DenoisingModel(diffusion=self.diffusion_model,
                                               unet=self.unet, **denoising_model_spec["params"])
+        self.register_buffers()
     
     def forward(self, *args, **kwargs):
         return self.denoising_model.forward(*args, **kwargs)
     
+    def register_buffers(self):
+        alphas_cumprod = self.diffusion_model.cumalphas
+        assert alphas_cumprod.shape[0] == self.denoising_model.time_steps, 'alphas have to be defined for each timestep'
+        to_torch = lambda x: x.clone().detach().to(torch.float32).to(alphas_cumprod.device)
+
+        self.register_buffer('betas', to_torch(self.diffusion_model.betas))
+        self.register_buffer('alphas_cumprod', to_torch(alphas_cumprod))
+        self.register_buffer('alphas_cumprod_prev', to_torch(self.diffusion_model.cumalphas_prev))
+
+        # calculations for diffusion q(x_t | x_{t-1}) and others
+        self.register_buffer('sqrt_alphas_cumprod', to_torch(np.sqrt(alphas_cumprod.cpu())))
+        self.register_buffer('sqrt_one_minus_alphas_cumprod', to_torch(np.sqrt(1. - alphas_cumprod.cpu())))
+        self.register_buffer('log_one_minus_alphas_cumprod', to_torch(np.log(1. - alphas_cumprod.cpu())))
+        self.register_buffer('sqrt_recip_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod.cpu())))
+        self.register_buffer('sqrt_recipm1_alphas_cumprod', to_torch(np.sqrt(1. / alphas_cumprod.cpu() - 1)))
+        
     @torch.no_grad()
-    def diffusion_forward(self, *args, **kwargs):
-        return self.diffusion_model.forward(*args, **kwargs)
+    def ddim_sampling(self, x_noise, condition, feature_condition, context,
+                      ddim_discretize="uniform", ddim_steps=50, ddim_eta=1., verbose=True,
+                      ddim_use_original_steps=False, mask=None, x0=None, timesteps=None, log_every_t=10):
+        
+        self.ddim_timesteps = make_ddim_timesteps(ddim_discr_method=ddim_discretize, num_ddim_timesteps=ddim_steps,
+                                                  num_ddpm_timesteps=self.denoising_model.time_steps, verbose=verbose)
+
+        # ddim sampling parameters
+        to_torch = lambda x: torch.tensor(x).to(torch.float32).to(self.alphas_cumprod.device)
+        ddim_sigmas, ddim_alphas, ddim_alphas_prev = make_ddim_sampling_parameters(alphacums=self.alphas_cumprod.cpu(),
+                                                                                   ddim_timesteps=self.ddim_timesteps,
+                                                                                   eta=ddim_eta,verbose=verbose)
+        self.register_buffer('ddim_sigmas', to_torch(ddim_sigmas))
+        self.register_buffer('ddim_alphas', to_torch(ddim_alphas))
+        self.register_buffer('ddim_alphas_prev', to_torch(ddim_alphas_prev))
+        self.register_buffer('ddim_sqrt_one_minus_alphas', to_torch(np.sqrt(1. - ddim_alphas)))
+        sigmas_for_original_sampling_steps = ddim_eta * torch.sqrt(
+            (1 - self.alphas_cumprod_prev) / (1 - self.alphas_cumprod) * (
+                        1 - self.alphas_cumprod / self.alphas_cumprod_prev))
+        self.register_buffer('ddim_sigmas_for_original_num_steps', sigmas_for_original_sampling_steps)
+        
+        device = self.betas.device
+        b = x_noise.shape[0]
+
+        if timesteps is None:
+            timesteps = self.denoising_model.time_steps if ddim_use_original_steps else self.ddim_timesteps
+        elif timesteps is not None and not ddim_use_original_steps:
+            subset_end = int(min(timesteps / self.ddim_timesteps.shape[0], 1) * self.ddim_timesteps.shape[0]) - 1
+            timesteps = self.ddim_timesteps[:subset_end]
+
+        intermediates = {'x_inter': [x_noise], 'pred_x0': [x_noise]}
+        time_range = reversed(range(0,timesteps)) if ddim_use_original_steps else np.flip(timesteps)
+        total_steps = timesteps if ddim_use_original_steps else timesteps.shape[0]
+        if verbose: print(f"Running DDIM Sampling with {total_steps} timesteps")
+
+        iterator = tqdm(time_range, desc='DDIM Sampler', total=total_steps) if verbose else time_range
+
+        for i, step in enumerate(iterator):
+            index = total_steps - i - 1
+            ts = torch.full((b,), step, device=device, dtype=torch.long)
+
+            if mask is not None:
+                assert x0 is not None
+                img_orig = self.diffusion_model.q_xt_given_x0(x0, ts)
+                x_noise = img_orig * mask + (1. - mask) * x_noise
+
+            outs = self._ddim_sampling(x_noise, condition, feature_condition, context, ts, self.unet.dims, 
+                                       index=index, 
+                                       use_original_steps=ddim_use_original_steps,)
+            x_noise, pred_x0 = outs
+
+            if index % log_every_t == 0 or index == total_steps - 1:
+                intermediates['x_inter'].append(x_noise)
+                intermediates['pred_x0'].append(pred_x0)
+
+        return x_noise, intermediates
+        
+    @torch.no_grad()
+    def _ddim_sampling(self, x, c, f, ctxt, t, d,
+                       index, use_original_steps, temperature=1., noise_dropout=0.):
+        b, *_, device = *x.shape, x.device
+
+        e_t = self.denoising_model.forward_step(x, c, f, t, ctxt)["diffusion_out"]
+
+        alphas = self.alphas_cumprod if use_original_steps else self.ddim_alphas
+        alphas_prev = self.alphas_cumprod_prev if use_original_steps else self.ddim_alphas_prev
+        sqrt_one_minus_alphas = self.sqrt_one_minus_alphas_cumprod if use_original_steps else self.ddim_sqrt_one_minus_alphas
+        sigmas = self.ddim_sigmas_for_original_num_steps if use_original_steps else self.ddim_sigmas
+        # select parameters corresponding to the currently considered timestep
+        a_t = torch.full((b, 1) + (1,) * d, alphas[index], device=device)
+        a_prev = torch.full((b, 1) + (1,) * d, alphas_prev[index], device=device)
+        sigma_t = torch.full((b, 1) + (1,) * d, sigmas[index], device=device)
+        sqrt_one_minus_at = torch.full((b, 1) + (1,) * d, sqrt_one_minus_alphas[index], device=device)
+
+        # current prediction for x_0
+        pred_x0 = (x - sqrt_one_minus_at * e_t) / a_t.sqrt()
+        # direction pointing to x_t
+        dir_xt = (1. - a_prev - sigma_t**2).sqrt() * e_t
+        noise = sigma_t * OneHotCategoricalBCHW(logits=torch.zeros(x.shape, device=self.alphas_cumprod.device)).sample() * temperature
+        if noise_dropout > 0.:
+            noise = torch.nn.functional.dropout(noise, p=noise_dropout)
+        x_prev = a_prev.sqrt() * pred_x0 + dir_xt + noise
+        return x_prev, pred_x0

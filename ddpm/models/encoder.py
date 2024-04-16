@@ -13,9 +13,12 @@ from ddpm.models.unet_openai.attention import BasicTransformerBlock, CrossAttent
 class AbstractEncoder(nn.Module):
     def __init__(self):
         super().__init__()
+        
+    def forward(self, inputs):
+        return inputs
 
     def encode(self, *args, **kwargs):
-        raise NotImplementedError
+        return self(*args, **kwargs)
 
 
 class FrozenBERTEmbedder(AbstractEncoder):

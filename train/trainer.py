@@ -17,7 +17,7 @@ from torch.utils.data import Dataset, DataLoader
 from tensorboardX import SummaryWriter, GlobalSummaryWriter
 
 sys.path.append("/mnt/workspace/dailinrui/code/multimodal/trajectory_generation/ccdm")
-from train.utils import default, identity, maybe_mkdir, get_cls_from_pkg
+from train.utils import default, identity, maybe_mkdir, get_cls_from_pkg, visualize
 from train.ccdm import CategoricalDiffusionModel, OneHotCategoricalBCHW
 from train.loss import DiffusionKLLoss, CrossEntropyLoss, LPIPS
 
@@ -90,17 +90,18 @@ class Trainer:
     def train(self):
         self.model.train()
         train_it = tqdm(range(self.max_epochs), desc="train progress")
-        for ep in train_it:
+        for ep in range(self.max_epochs):
+            self._train(ep, train_it)
+            self.lr_scheduler.step()
+            
             if ep % 1 == 0:
                 if self.val_proc is not None:
                     self.val_proc.join()  
-                self.val_proc = torch.multiprocessing.get_context("spawn").Process(target=self.val, args=(ep, self.val_device))
+                self.val_proc = torch.multiprocessing.get_context("spawn").Process(target=self.val, args=(ep, 0))
                 self.val_proc.start()
+                # self.val(ep, self.val_device)
                 
-            self._train(ep, train_it)
-            self.lr_scheduler.step()
-                
-        self._save(os.path.join(self.model_path),
+        self._save(os.path.join(self.model_path, "lpips.ckpt"),
                    lpips_model=self.lpips.state_dict())
         self._save(os.path.join(self.model_path, "last.ckpt"),
                    model=self.model.state_dict())
@@ -138,6 +139,7 @@ class Trainer:
                                     {k: round(v.item(), 2) for k, v in itr_loss.items()},
                                     global_step)
             iterator.set_postfix(itr=global_step, **{k: f"{v.item():.2f} -> {itr_loss[k].item():.2f}" for k, v in loss_log.items()})
+            iterator.update(1 / len(self.train_dl))
     
     def val(self, ep, device):
         model = self.model.eval()
@@ -150,21 +152,22 @@ class Trainer:
             x0 = self.x_encoder(x0)
             x0_shape = (x0.shape[0], model.diffusion_model.num_classes, *x0.shape[2:])
             xt = OneHotCategoricalBCHW(logits=torch.zeros(x0_shape, device=self.device)).sample()
-            ret = model(xt.argmax(1),
-                        self.condition_encoder(None),
-                        feature_condition=None,
-                        context=self.context_encoder(context))
-            x0_pred = ret["diffusion_out"]
+            ret = model.ddim_sampling(xt.contiguous(),
+                                      self.condition_encoder(None),
+                                      feature_condition=None,
+                                      context=self.context_encoder(context),
+                                      verbose=False)
+            x0_pred = ret[0]
             
             for fn, p in self.loss.items():
-                val_loss[fn.__class__.__name__] += fn(x0=x0, xt=xt, t=self.timesteps, x0_pred=x0_pred, is_training=False).item()
-            val_loss["TotalLoss"] += sum(val_loss.values())
+                val_loss[fn.__class__.__name__] += fn(x0=x0, xt=xt, t=self.timesteps, x0_pred=x0_pred, is_training=False).abs().item()
             
             val_it.set_postfix(**{k: v / (itr + 1) for k, v in val_loss.items()})
             
+        self.writer.add_images("val/gen", visualize(x0_pred.argmax(1), n=len(self.legends) - 1), ep)
         for k, v in val_loss.items(): self.writer.add_scalar(f'val/unnormalized_{k}', v / len(self.val_dl), ep)
             
-        if abs(new_best := val_loss["LPIPS"]) < self.best:
+        if abs(new_best := val_loss["LPIPS"] / len(self.val_dl)) < self.best:
             print(f"best lpips for epoch {ep}: {new_best:.2f}")
             self.best = new_best
             self._save(os.path.join(self.model_path, f"best_model_lpips.ckpt"),

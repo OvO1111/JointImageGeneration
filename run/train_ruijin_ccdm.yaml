@@ -7,6 +7,7 @@ dataset:
     target: datasets.ruijin.PretrainDataset
     params:
       split: val
+      max_size: 50
 
 model:
   target: train.ccdm.CategoricalDiffusionModel
@@ -40,7 +41,7 @@ encoder:
 trainer:
   target: train.trainer.Trainer
   params:
-    batch_size: 1
+    batch_size: 4
     max_epochs: 1000
     timesteps: 1000
     lr: 1e-4

@@ -443,7 +443,7 @@ class UNetModel(nn.Module):
         conv_resample=True,
         dims=2,
         num_classes=None,
-        use_checkpoint=False,
+        use_checkpoint=True,
         use_fp16=False,
         num_heads=1,
         num_head_channels=-1,
@@ -454,8 +454,8 @@ class UNetModel(nn.Module):
         softmax_output=True,
         ce_head=False,
         feature_cond_encoder=None,
-        use_spatial_transformer=False,
-        transformer_depth=None,
+        use_spatial_transformer=True,
+        transformer_depth=1,
         context_dim=None,
         disabled_sa=False,
         use_linear_in_transformer=False,
@@ -465,6 +465,7 @@ class UNetModel(nn.Module):
         if num_heads_upsample == -1:
             num_heads_upsample = num_heads
 
+        self.dims = dims
         self.in_channels = in_channels
         self.model_channels = model_channels
         self.out_channels = out_channels
@@ -528,31 +529,31 @@ class UNetModel(nn.Module):
         for level, mult in enumerate(channel_mult):
             for _ in range(num_res_blocks):
                 # print(input_blocks_cnt, ds)
-                if feature_cond_encoder is not None:
-                    if feature_cond_encoder['type'] == 'resnet':
-                        if input_blocks_cnt in self.feature_condition_idx:
-                                assert model_channels in [32, 64]
-                                if feature_cond_encoder['scale'] == 'single':
-                                    if input_blocks_cnt == 13:
-                                        ch = 1120 if model_channels == 32 else 1216     # 96 + 1024
-                                    else:
-                                        raise NotImplementedError()
-                                elif feature_cond_encoder['scale'] == 'multi':
-                                    if input_blocks_cnt == 7:
-                                        ch = 256+32 if model_channels == 32 else 256+64
-                                    elif input_blocks_cnt == 10:
-                                        ch = 512+64 if model_channels == 32 else 512+128
-                                    elif input_blocks_cnt == 13:
-                                        ch = 1024+2048+96 if model_channels == 32 else 1024+2048+192
-                                    else:
-                                        raise NotImplementedError()
+                # if feature_cond_encoder is not None:
+                #     if feature_cond_encoder['type'] == 'resnet':
+                #         if input_blocks_cnt in self.feature_condition_idx:
+                #                 assert model_channels in [32, 64]
+                #                 if feature_cond_encoder['scale'] == 'single':
+                #                     if input_blocks_cnt == 13:
+                #                         ch = 1120 if model_channels == 32 else 1216     # 96 + 1024
+                #                     else:
+                #                         raise NotImplementedError()
+                #                 elif feature_cond_encoder['scale'] == 'multi':
+                #                     if input_blocks_cnt == 7:
+                #                         ch = 256+32 if model_channels == 32 else 256+64
+                #                     elif input_blocks_cnt == 10:
+                #                         ch = 512+64 if model_channels == 32 else 512+128
+                #                     elif input_blocks_cnt == 13:
+                #                         ch = 1024+2048+96 if model_channels == 32 else 1024+2048+192
+                #                     else:
+                #                         raise NotImplementedError()
 
-                    elif feature_cond_encoder['type'] == 'dino':
-                        if (input_blocks_cnt in self.feature_condition_idx) and feature_cond_encoder['output_stride'] == ds:
-                            LOGGER.info(f"Dino features concatenated at feature_condition_index={self.feature_condition_idx}"
-                                        f" output_stride={ds} -- changing next ResBlock input channels "
-                                        f"from {ch} to {ch + feature_cond_encoder['channels']}")
-                            ch = ch + feature_cond_encoder['channels']
+                #     elif feature_cond_encoder['type'] == 'dino':
+                #         if (input_blocks_cnt in self.feature_condition_idx) and feature_cond_encoder['output_stride'] == ds:
+                #             LOGGER.info(f"Dino features concatenated at feature_condition_index={self.feature_condition_idx}"
+                #                         f" output_stride={ds} -- changing next ResBlock input channels "
+                #                         f"from {ch} to {ch + feature_cond_encoder['channels']}")
+                #             ch = ch + feature_cond_encoder['channels']
 
                 layers = [
                     ResBlock(
@@ -782,25 +783,25 @@ class UNetModel(nn.Module):
         h = x.type(self.dtype)
         for idx, module in enumerate(self.input_blocks):
             # print(idx, h.shape)
-            if feature_condition is not None and idx in self.feature_condition_idx:
-                if self.feature_cond_encoder['type'] == 'resnet':
-                    if self.feature_cond_encoder['scale'] == 'single':
-                        h = th.cat([h, feature_condition], dim=1)
-                    elif self.feature_cond_encoder['scale'] == 'multi':
-                        if idx == 7:
-                            h = th.cat([h, feature_condition['layer1']], dim=1)
-                        elif idx == 10:
-                            h = th.cat([h, feature_condition['layer2']], dim=1)
-                        elif idx == 13:
-                            feature3 = feature_condition['layer3']
-                            feature4 = feature_condition['layer4']
-                            feature4 = F.interpolate(feature4, (8, 16), mode='bilinear', align_corners=False)
-                            h = th.cat([h, feature3, feature4], dim=1)
-                elif self.feature_cond_encoder['type'] == 'dino':
-                    if self.feature_cond_encoder['scale'] == 'single':
-                        h = th.cat([h, feature_condition], dim=1)
-                    else:
-                        raise NotImplementedError()
+            # if feature_condition is not None and idx in self.feature_condition_idx:
+            #     if self.feature_cond_encoder['type'] == 'resnet':
+            #         if self.feature_cond_encoder['scale'] == 'single':
+            #             h = th.cat([h, feature_condition], dim=1)
+            #         elif self.feature_cond_encoder['scale'] == 'multi':
+            #             if idx == 7:
+            #                 h = th.cat([h, feature_condition['layer1']], dim=1)
+            #             elif idx == 10:
+            #                 h = th.cat([h, feature_condition['layer2']], dim=1)
+            #             elif idx == 13:
+            #                 feature3 = feature_condition['layer3']
+            #                 feature4 = feature_condition['layer4']
+            #                 feature4 = F.interpolate(feature4, (8, 16), mode='bilinear', align_corners=False)
+            #                 h = th.cat([h, feature3, feature4], dim=1)
+            #     elif self.feature_cond_encoder['type'] == 'dino':
+            #         if self.feature_cond_encoder['scale'] == 'single':
+            #             h = th.cat([h, feature_condition], dim=1)
+            #         else:
+            #             raise NotImplementedError()
 
             h = module(h, emb, context)
             hs.append(h)
