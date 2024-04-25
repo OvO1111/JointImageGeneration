@@ -35,5 +35,5 @@ python sample_diffusion.py -r <ckpt_path> --inputs <stage_1_generated_mask_dir> 
 
 ## Insights
 - FVD may not be good evaluation metric for medical imaging, a similar insight has been substantiated by "XReal: Realistic Anatomy and Pathology-Aware X-ray Generation via Controllable Diffusion Model"
-- Direct cross-attn may not be so helpful when fusing text information into image generation tasks
+- Direct cross-attn of texts may not be so helpful when they are the only guidance for image generation, need to think of other ways, especially when they are not articulating themselves
 - ...
