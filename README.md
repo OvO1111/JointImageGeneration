@@ -33,4 +33,7 @@ python sample_diffusion.py -r <ckpt_path> --inputs <stage_1_generated_mask_dir> 
 <img src="https://github.com/OvO1111/JointImageGeneration/assets/43473365/949ca811-1b26-4676-88e1-b6942e032cfe" alt="qualitative_results" style="width:100%">
 </figure>
 
-
+## Insights
+- FVD may not be good evaluation metric for medical imaging, a similar insight has been substantiated by "XReal: Realistic Anatomy and Pathology-Aware X-ray Generation via Controllable Diffusion Model"
+- Direct cross-attn may not be so helpful when fusing text information into image generation tasks
+- ...
