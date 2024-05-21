@@ -1,5 +1,5 @@
 # Joint CT & Anatomical Mask Generation
-Official implementation of GuideGen in `GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation`, submitted to MICCAI 2024, and sadly, rejected, so I am not updating the contents in this repo for now, before the updated version of our work is released.
+Official implementation of GuideGen in `GuideGen: A Text-guided Framework for Joint CT Volume and Anatomical structure Generation`, submitted to MICCAI 2024, and sadly, rejected, so I am not updating the contents in this repo for now, until the updated version of our work is released, hopefully by the end of this year.
 
 ## Code
 Note that you may need to first familiarize yourself with the methodology of [CCDM](https://github.com/LarsDoorenbos/ccdm-stochastic-segmentation) and [LDM](https://github.com/CompVis/latent-diffusion), since these modules are modified and combined in our paper to cope with our goal of joint CT & anatomical mask generation.
